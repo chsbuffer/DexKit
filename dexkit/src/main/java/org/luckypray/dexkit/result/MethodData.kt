@@ -259,6 +259,19 @@ class MethodData private constructor(
     }
 
     /**
+     * Get all instructions in this method's bytecode.
+     * Each instruction includes its index, opcode, and optional operand
+     * (method/field/class reference, string constant, or numeric literal).
+     * ----------------
+     * 获取该方法字节码中的所有指令。
+     * 每条指令包含索引、opcode，以及可选的操作数
+     * （方法/字段/类引用、字符串常量或数字常量）。
+     */
+    val instructions: List<InstructionData> by lazy {
+        bridge.getMethodInstructions(getEncodeId(dexId, id))
+    }
+
+    /**
      * Load declared class from [ClassLoader]
      * ----------------
      * 从 [ClassLoader] 加载定义方法的类

@@ -73,3 +73,12 @@ enum AnnotationEncodeValueType: byte {
     NullValue,
     BoolValue,
 }
+
+enum OperandType: byte {
+    None,
+    MethodRef,
+    FieldRef,
+    ClassRef,
+    String,
+    Literal,
+}

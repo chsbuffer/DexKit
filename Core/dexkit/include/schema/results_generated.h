@@ -73,6 +73,12 @@ struct UsingFieldMetaBuilder;
 struct UsingFieldMetaArrayHolder;
 struct UsingFieldMetaArrayHolderBuilder;
 
+struct InstructionMeta;
+struct InstructionMetaBuilder;
+
+struct InstructionMetaArrayHolder;
+struct InstructionMetaArrayHolderBuilder;
+
 enum class AnnotationEncodeValue : uint8_t {
   NONE = 0,
   EncodeValueByte = 1,
@@ -1691,6 +1697,208 @@ inline ::flatbuffers::Offset<UsingFieldMetaArrayHolder> CreateUsingFieldMetaArra
     const std::vector<::flatbuffers::Offset<dexkit::schema::UsingFieldMeta>> *items = nullptr) {
   auto items__ = items ? _fbb.CreateVector<::flatbuffers::Offset<dexkit::schema::UsingFieldMeta>>(*items) : 0;
   return dexkit::schema::CreateUsingFieldMetaArrayHolder(
+      _fbb,
+      items__);
+}
+
+struct InstructionMeta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef InstructionMetaBuilder Builder;
+  struct Traits;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_INDEX = 4,
+    VT_OPCODE = 6,
+    VT_OPERAND_TYPE = 8,
+    VT_METHOD_REF = 10,
+    VT_FIELD_REF = 12,
+    VT_CLASS_REF = 14,
+    VT_STRING_VALUE = 16,
+    VT_LITERAL_VALUE = 18
+  };
+  uint32_t index() const {
+    return GetField<uint32_t>(VT_INDEX, 0);
+  }
+  int32_t opcode() const {
+    return GetField<int32_t>(VT_OPCODE, 0);
+  }
+  dexkit::schema::OperandType operand_type() const {
+    return static_cast<dexkit::schema::OperandType>(GetField<int8_t>(VT_OPERAND_TYPE, 0));
+  }
+  const dexkit::schema::MethodMeta *method_ref() const {
+    return GetPointer<const dexkit::schema::MethodMeta *>(VT_METHOD_REF);
+  }
+  const dexkit::schema::FieldMeta *field_ref() const {
+    return GetPointer<const dexkit::schema::FieldMeta *>(VT_FIELD_REF);
+  }
+  const dexkit::schema::ClassMeta *class_ref() const {
+    return GetPointer<const dexkit::schema::ClassMeta *>(VT_CLASS_REF);
+  }
+  const ::flatbuffers::String *string_value() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_STRING_VALUE);
+  }
+  int64_t literal_value() const {
+    return GetField<int64_t>(VT_LITERAL_VALUE, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_INDEX, 4) &&
+           VerifyField<int32_t>(verifier, VT_OPCODE, 4) &&
+           VerifyField<int8_t>(verifier, VT_OPERAND_TYPE, 1) &&
+           VerifyOffset(verifier, VT_METHOD_REF) &&
+           verifier.VerifyTable(method_ref()) &&
+           VerifyOffset(verifier, VT_FIELD_REF) &&
+           verifier.VerifyTable(field_ref()) &&
+           VerifyOffset(verifier, VT_CLASS_REF) &&
+           verifier.VerifyTable(class_ref()) &&
+           VerifyOffset(verifier, VT_STRING_VALUE) &&
+           verifier.VerifyString(string_value()) &&
+           VerifyField<int64_t>(verifier, VT_LITERAL_VALUE, 8) &&
+           verifier.EndTable();
+  }
+};
+
+struct InstructionMetaBuilder {
+  typedef InstructionMeta Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_index(uint32_t index) {
+    fbb_.AddElement<uint32_t>(InstructionMeta::VT_INDEX, index, 0);
+  }
+  void add_opcode(int32_t opcode) {
+    fbb_.AddElement<int32_t>(InstructionMeta::VT_OPCODE, opcode, 0);
+  }
+  void add_operand_type(dexkit::schema::OperandType operand_type) {
+    fbb_.AddElement<int8_t>(InstructionMeta::VT_OPERAND_TYPE, static_cast<int8_t>(operand_type), 0);
+  }
+  void add_method_ref(::flatbuffers::Offset<dexkit::schema::MethodMeta> method_ref) {
+    fbb_.AddOffset(InstructionMeta::VT_METHOD_REF, method_ref);
+  }
+  void add_field_ref(::flatbuffers::Offset<dexkit::schema::FieldMeta> field_ref) {
+    fbb_.AddOffset(InstructionMeta::VT_FIELD_REF, field_ref);
+  }
+  void add_class_ref(::flatbuffers::Offset<dexkit::schema::ClassMeta> class_ref) {
+    fbb_.AddOffset(InstructionMeta::VT_CLASS_REF, class_ref);
+  }
+  void add_string_value(::flatbuffers::Offset<::flatbuffers::String> string_value) {
+    fbb_.AddOffset(InstructionMeta::VT_STRING_VALUE, string_value);
+  }
+  void add_literal_value(int64_t literal_value) {
+    fbb_.AddElement<int64_t>(InstructionMeta::VT_LITERAL_VALUE, literal_value, 0);
+  }
+  explicit InstructionMetaBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<InstructionMeta> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<InstructionMeta>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<InstructionMeta> CreateInstructionMeta(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t index = 0,
+    int32_t opcode = 0,
+    dexkit::schema::OperandType operand_type = dexkit::schema::OperandType::None,
+    ::flatbuffers::Offset<dexkit::schema::MethodMeta> method_ref = 0,
+    ::flatbuffers::Offset<dexkit::schema::FieldMeta> field_ref = 0,
+    ::flatbuffers::Offset<dexkit::schema::ClassMeta> class_ref = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> string_value = 0,
+    int64_t literal_value = 0) {
+  InstructionMetaBuilder builder_(_fbb);
+  builder_.add_literal_value(literal_value);
+  builder_.add_string_value(string_value);
+  builder_.add_class_ref(class_ref);
+  builder_.add_field_ref(field_ref);
+  builder_.add_method_ref(method_ref);
+  builder_.add_opcode(opcode);
+  builder_.add_index(index);
+  builder_.add_operand_type(operand_type);
+  return builder_.Finish();
+}
+
+struct InstructionMeta::Traits {
+  using type = InstructionMeta;
+  static auto constexpr Create = CreateInstructionMeta;
+};
+
+inline ::flatbuffers::Offset<InstructionMeta> CreateInstructionMetaDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t index = 0,
+    int32_t opcode = 0,
+    dexkit::schema::OperandType operand_type = dexkit::schema::OperandType::None,
+    ::flatbuffers::Offset<dexkit::schema::MethodMeta> method_ref = 0,
+    ::flatbuffers::Offset<dexkit::schema::FieldMeta> field_ref = 0,
+    ::flatbuffers::Offset<dexkit::schema::ClassMeta> class_ref = 0,
+    const char *string_value = nullptr,
+    int64_t literal_value = 0) {
+  auto string_value__ = string_value ? _fbb.CreateString(string_value) : 0;
+  return dexkit::schema::CreateInstructionMeta(
+      _fbb,
+      index,
+      opcode,
+      operand_type,
+      method_ref,
+      field_ref,
+      class_ref,
+      string_value__,
+      literal_value);
+}
+
+struct InstructionMetaArrayHolder FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef InstructionMetaArrayHolderBuilder Builder;
+  struct Traits;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ITEMS = 4
+  };
+  const ::flatbuffers::Vector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>> *items() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>> *>(VT_ITEMS);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_ITEMS) &&
+           verifier.VerifyVector(items()) &&
+           verifier.VerifyVectorOfTables(items()) &&
+           verifier.EndTable();
+  }
+};
+
+struct InstructionMetaArrayHolderBuilder {
+  typedef InstructionMetaArrayHolder Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_items(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>>> items) {
+    fbb_.AddOffset(InstructionMetaArrayHolder::VT_ITEMS, items);
+  }
+  explicit InstructionMetaArrayHolderBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<InstructionMetaArrayHolder> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<InstructionMetaArrayHolder>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<InstructionMetaArrayHolder> CreateInstructionMetaArrayHolder(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>>> items = 0) {
+  InstructionMetaArrayHolderBuilder builder_(_fbb);
+  builder_.add_items(items);
+  return builder_.Finish();
+}
+
+struct InstructionMetaArrayHolder::Traits {
+  using type = InstructionMetaArrayHolder;
+  static auto constexpr Create = CreateInstructionMetaArrayHolder;
+};
+
+inline ::flatbuffers::Offset<InstructionMetaArrayHolder> CreateInstructionMetaArrayHolderDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const std::vector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>> *items = nullptr) {
+  auto items__ = items ? _fbb.CreateVector<::flatbuffers::Offset<dexkit::schema::InstructionMeta>>(*items) : 0;
+  return dexkit::schema::CreateInstructionMetaArrayHolder(
       _fbb,
       items__);
 }
