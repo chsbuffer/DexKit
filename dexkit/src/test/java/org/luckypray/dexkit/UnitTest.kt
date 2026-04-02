@@ -275,4 +275,47 @@ class UnitTest {
         }.single()
         assert(cls.className == "org.luckypray.dexkit.demo.PlayActivity")
     }
+
+    @Test
+    fun testGetMethodInstructions() {
+        val res = bridge.getMethodData(
+            "Lorg/luckypray/dexkit/demo/PlayActivity;->onCreate(Landroid/os/Bundle;)V"
+        )
+        assert(res != null)
+        val instructions = res!!.instructions
+        println("Instructions count: ${instructions.size}")
+        instructions.forEach { ins ->
+            println("[${ins.index}] op=0x${ins.opcode.toString(16)}" +
+                (ins.methodRef?.let { " method=${it.descriptor}" } ?: "") +
+                (ins.fieldRef?.let { " field=${it.descriptor}" } ?: "") +
+                (ins.classRef?.let { " class=${it.name}" } ?: "") +
+                (ins.string?.let { " str=\"$it\"" } ?: "") +
+                (ins.literal?.let { " lit=$it" } ?: ""))
+        }
+        assert(instructions.isNotEmpty())
+        // All instructions returned, should match opCodes count
+        assert(instructions.size == res.opCodes.size) {
+            "instructions.size(${instructions.size}) != opCodes.size(${res.opCodes.size})"
+        }
+        // Indices must be contiguous 0..n-1
+        instructions.forEachIndexed { i, ins ->
+            assert(ins.index == i) { "Expected index $i but got ${ins.index}" }
+        }
+        // Verify string operands include known strings
+        assert(instructions.any { it.string == "PlayActivity" })
+        // Instructions with operands have exactly one; others have none
+        instructions.forEach { ins ->
+            val nonNullCount = listOfNotNull(
+                ins.methodRef, ins.fieldRef, ins.classRef, ins.string, ins.literal
+            ).size
+            assert(nonNullCount <= 1) {
+                "Instruction at index ${ins.index} has $nonNullCount operands, expected 0 or 1"
+            }
+        }
+        // Some instructions should have no operand (e.g. move, return)
+        assert(instructions.any { ins ->
+            ins.methodRef == null && ins.fieldRef == null && ins.classRef == null
+                && ins.string == null && ins.literal == null
+        }) { "Expected some instructions without operands" }
+    }
 }

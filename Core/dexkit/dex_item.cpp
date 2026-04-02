@@ -1149,6 +1149,99 @@ std::vector<EncodeNumber> DexItem::GetUsingNumbersFromCode(uint32_t method_idx) 
     return std::move(using_numbers);
 }
 
+std::vector<InstructionBean> DexItem::GetInstructions(uint32_t method_idx) {
+    auto code = method_codes[method_idx];
+    if (code == nullptr) {
+        return {};
+    }
+    std::vector<InstructionBean> instructions;
+    auto p = code->insns;
+    auto end_p = p + code->insns_size;
+    uint32_t ins_index = 0;
+    while (p < end_p) {
+        auto op = (uint8_t) *p;
+        auto ptr = p;
+        auto width = GetBytecodeWidth(ptr++);
+
+        InstructionBean bean;
+        bean.index = ins_index;
+        bean.opcode = op;
+
+        if ((op >= 0x6e && op <= 0x72) || (op >= 0x74 && op <= 0x78)) {
+            // invoke-kind and invoke-kind/range: method reference
+            auto index = ReadShort(ptr);
+            bean.operand_type = schema::OperandType::MethodRef;
+            bean.method_ref = GetMethodBean(index);
+        } else if (op >= 0x52 && op <= 0x6d) {
+            // iget/iput/sget/sput family: field reference
+            auto index = ReadShort(ptr);
+            bean.operand_type = schema::OperandType::FieldRef;
+            bean.field_ref = GetFieldBean(index);
+        } else if (op == 0x1c || op == 0x1f || op == 0x20
+                   || op == 0x22 || op == 0x23) {
+            // const-class, check-cast, instance-of, new-instance, new-array: class/type reference
+            auto index = ReadShort(ptr);
+            bean.operand_type = schema::OperandType::ClassRef;
+            bean.class_ref = GetClassBean(index);
+        } else if (op == 0x1a) {
+            // const-string
+            auto index = ReadShort(ptr);
+            bean.operand_type = schema::OperandType::String;
+            bean.string_value = this->strings[index];
+        } else if (op == 0x1b) {
+            // const-string/jumbo
+            auto index = ReadInt(ptr);
+            bean.operand_type = schema::OperandType::String;
+            bean.string_value = this->strings[index];
+        } else if (op == 0x12) {
+            // const/4 (k11n)
+            int8_t value = (int8_t)(*(ptr - 1) >> 12);
+            if (value & 0x8) {
+                value |= 0xf0;
+            }
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x13 || op == 0x16) {
+            // const/16, const-wide/16 (k21s)
+            int16_t value = (int16_t)*ptr;
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x14) {
+            // const (k31i)
+            int32_t value = (int32_t)ReadInt(ptr);
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x17) {
+            // const-wide/32 (k31i)
+            int32_t value = (int32_t)ReadInt(ptr);
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x15) {
+            // const/high16 (k21h)
+            int32_t value = (int32_t)(*ptr << 16);
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x19) {
+            // const-wide/high16 (k21h)
+            int64_t value = (int64_t)(((uint64_t)*ptr) << 48);
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        } else if (op == 0x18) {
+            // const-wide (k51l)
+            int64_t value = (int64_t)ReadLong(ptr);
+            bean.operand_type = schema::OperandType::Literal;
+            bean.literal_value = value;
+        }
+        // else: operand_type remains None
+
+        instructions.emplace_back(std::move(bean));
+
+        p += width;
+        ++ins_index;
+    }
+    return instructions;
+}
+
 bool DexItem::CheckAllTypeNamesDeclared(std::vector<std::string_view> &types) {
     for (auto &type: types) { // NOLINT
         if (!this->type_ids_map.contains(NameToDescriptor(type))) {

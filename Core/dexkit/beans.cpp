@@ -82,6 +82,45 @@ UsingFieldBean::CreateUsingFieldMeta(flatbuffers::FlatBufferBuilder &fbb) const 
     return using_field_meta;
 }
 
+flatbuffers::Offset<schema::InstructionMeta>
+InstructionBean::CreateInstructionMeta(flatbuffers::FlatBufferBuilder &fbb) const {
+    flatbuffers::Offset<schema::MethodMeta> method_offset = 0;
+    flatbuffers::Offset<schema::FieldMeta> field_offset = 0;
+    flatbuffers::Offset<schema::ClassMeta> class_offset = 0;
+    flatbuffers::Offset<flatbuffers::String> string_offset = 0;
+
+    switch (this->operand_type) {
+        case schema::OperandType::MethodRef:
+            if (method_ref) method_offset = method_ref->CreateMethodMeta(fbb);
+            break;
+        case schema::OperandType::FieldRef:
+            if (field_ref) field_offset = field_ref->CreateFieldMeta(fbb);
+            break;
+        case schema::OperandType::ClassRef:
+            if (class_ref) class_offset = class_ref->CreateClassMeta(fbb);
+            break;
+        case schema::OperandType::String:
+            string_offset = fbb.CreateString(this->string_value);
+            break;
+        default:
+            break;
+    }
+
+    auto instruction_meta = schema::CreateInstructionMeta(
+            fbb,
+            this->index,
+            this->opcode,
+            this->operand_type,
+            method_offset,
+            field_offset,
+            class_offset,
+            string_offset,
+            this->literal_value
+    );
+    fbb.Finish(instruction_meta);
+    return instruction_meta;
+}
+
 flatbuffers::Offset<schema::AnnotationEncodeValueMeta> // NOLINTNEXTLINE
 AnnotationEncodeValueBean::CreateAnnotationEncodeValueMeta(flatbuffers::FlatBufferBuilder &fbb) const {
     using namespace schema;

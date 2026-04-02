@@ -34,6 +34,7 @@ import org.luckypray.dexkit.result.ClassData
 import org.luckypray.dexkit.result.ClassDataList
 import org.luckypray.dexkit.result.FieldData
 import org.luckypray.dexkit.result.FieldDataList
+import org.luckypray.dexkit.result.InstructionData
 import org.luckypray.dexkit.result.MethodData
 import org.luckypray.dexkit.result.MethodDataList
 import org.luckypray.dexkit.result.UsingFieldData
@@ -553,6 +554,17 @@ class DexKitBridge : Closeable {
     }
 
     @JvmSynthetic
+    internal fun getMethodInstructions(encodeId: Long): List<InstructionData> {
+        val res = nativeGetMethodInstructions(safeToken, encodeId)
+        val holder = InnerInstructionMetaArrayHolder.getRootAsInstructionMetaArrayHolder(ByteBuffer.wrap(res))
+        val list = mutableListOf<InstructionData>()
+        for (i in 0 until holder.itemsLength) {
+            list.add(InstructionData.from(this@DexKitBridge, holder.items(i)!!))
+        }
+        return list
+    }
+
+    @JvmSynthetic
     internal fun readFieldMethods(encodeId: Long): MethodDataList {
         val res = nativeFieldGetMethods(safeToken, encodeId)
         val holder = InnerMethodMetaArrayHolder.getRootAsMethodMetaArrayHolder(ByteBuffer.wrap(res))
@@ -722,6 +734,9 @@ class DexKitBridge : Closeable {
 
         @JvmStatic
         private external fun nativeGetMethodUsingFields(nativePtr: Long, encodeId: Long): ByteArray
+
+        @JvmStatic
+        private external fun nativeGetMethodInstructions(nativePtr: Long, encodeId: Long): ByteArray
 
         @JvmStatic
         private external fun nativeFieldGetMethods(nativePtr: Long, encodeId: Long): ByteArray
