@@ -333,6 +333,46 @@ inline const char *EnumNameAnnotationEncodeValueType(AnnotationEncodeValueType e
   return EnumNamesAnnotationEncodeValueType()[index];
 }
 
+enum class OperandType : int8_t {
+  None = 0,
+  MethodRef = 1,
+  FieldRef = 2,
+  ClassRef = 3,
+  String = 4,
+  Literal = 5
+};
+
+inline const OperandType (&EnumValuesOperandType())[6] {
+  static const OperandType values[] = {
+    OperandType::None,
+    OperandType::MethodRef,
+    OperandType::FieldRef,
+    OperandType::ClassRef,
+    OperandType::String,
+    OperandType::Literal
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesOperandType() {
+  static const char * const names[7] = {
+    "None",
+    "MethodRef",
+    "FieldRef",
+    "ClassRef",
+    "String",
+    "Literal",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNameOperandType(OperandType e) {
+  if (::flatbuffers::IsOutRange(e, OperandType::None, OperandType::Literal)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesOperandType()[index];
+}
+
 }  // namespace schema
 }  // namespace dexkit
 

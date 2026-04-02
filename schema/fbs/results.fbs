@@ -123,3 +123,18 @@ table UsingFieldMeta {
 table UsingFieldMetaArrayHolder {
     items: [UsingFieldMeta];
 }
+
+table InstructionMeta {
+    index: uint32;
+    opcode: int;
+    operand_type: OperandType;
+    method_ref: MethodMeta;
+    field_ref: FieldMeta;
+    class_ref: ClassMeta;
+    string_value: string;
+    literal_value: long;
+}
+
+table InstructionMetaArrayHolder {
+    items: [InstructionMeta];
+}

@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <optional>
 #include <variant>
 
 #include "schema/enums_generated.h"
@@ -81,6 +82,22 @@ public:
 public:
     flatbuffers::Offset<schema::UsingFieldMeta>
     CreateUsingFieldMeta(flatbuffers::FlatBufferBuilder &fbb) const;
+};
+
+class InstructionBean {
+public:
+    uint32_t index = 0;
+    uint8_t opcode = 0;
+    schema::OperandType operand_type = schema::OperandType::None;
+    std::optional<MethodBean> method_ref;
+    std::optional<FieldBean> field_ref;
+    std::optional<ClassBean> class_ref;
+    std::string_view string_value;
+    int64_t literal_value = 0;
+
+public:
+    flatbuffers::Offset<schema::InstructionMeta>
+    CreateInstructionMeta(flatbuffers::FlatBufferBuilder &fbb) const;
 };
 
 class AnnotationBean;

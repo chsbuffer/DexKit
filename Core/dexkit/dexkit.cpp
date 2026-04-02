@@ -1362,6 +1362,24 @@ DexKit::GetUsingFields(int64_t encode_method_id) {
 }
 
 std::unique_ptr<flatbuffers::FlatBufferBuilder>
+DexKit::GetMethodInstructions(int64_t encode_method_id) {
+    auto dex_id = encode_method_id >> 32;
+    auto method_id = encode_method_id & UINT32_MAX;
+    auto result = dex_items[dex_id]->GetInstructions(method_id);
+
+    auto builder = std::make_unique<flatbuffers::FlatBufferBuilder>();
+    std::vector<flatbuffers::Offset<schema::InstructionMeta>> offsets;
+    for (auto &bean: result) {
+        auto res = bean.CreateInstructionMeta(*builder);
+        builder->Finish(res);
+        offsets.emplace_back(res);
+    }
+    auto array_holder = schema::CreateInstructionMetaArrayHolder(*builder, builder->CreateVector(offsets));
+    builder->Finish(array_holder);
+    return builder;
+}
+
+std::unique_ptr<flatbuffers::FlatBufferBuilder>
 DexKit::FieldGetMethods(int64_t encode_field_id) {
     auto execution_guard = EnterQueryExecution(kRwFieldMethod | kMethodUsingField);
 
