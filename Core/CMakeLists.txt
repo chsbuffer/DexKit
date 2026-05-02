@@ -24,6 +24,18 @@ set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} ${COMPILE_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMPILE_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 
+set(DEXKIT_ZLIB_LIBRARY z)
+if (UNIX AND NOT APPLE AND USE_MUSL_LIBC)
+    set(DEXKIT_ORIGINAL_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+    find_library(DEXKIT_ZLIB_STATIC_LIBRARY NAMES z)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${DEXKIT_ORIGINAL_FIND_LIBRARY_SUFFIXES})
+    if (NOT DEXKIT_ZLIB_STATIC_LIBRARY)
+        message(FATAL_ERROR "Can not find static zlib for musl all-in-one build. Please install zlib-static.")
+    endif ()
+    set(DEXKIT_ZLIB_LIBRARY "${DEXKIT_ZLIB_STATIC_LIBRARY}")
+endif ()
+
 add_library(${PROJECT_NAME}_static
         STATIC
         ${SLICER_SOURCES}
@@ -47,7 +59,7 @@ else ()
 endif ()
 target_link_libraries(${PROJECT_NAME}_static
         PUBLIC
-        z
+        ${DEXKIT_ZLIB_LIBRARY}
 )
 
 option(EXECUTABLE_TEST "execute test cpp" OFF)

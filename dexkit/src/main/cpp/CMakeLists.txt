@@ -31,6 +31,8 @@ if (DEXKIT_ENABLE_INTERNAL_METRICS_API)
     target_sources(${PROJECT_NAME} PRIVATE native-bridge-metrics.cpp)
 endif ()
 
+set(DEXKIT_EXTRA_LINK_LIBRARIES)
+
 if (WIN32)
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         target_link_options(${PROJECT_NAME} PRIVATE
@@ -71,10 +73,23 @@ elseif (UNIX AND NOT APPLE)
                 -flto
         )
 
+        list(APPEND DEXKIT_EXTRA_LINK_LIBRARIES
+                -Wl,--start-group
+                -Wl,-Bstatic
+                stdc++
+                gcc_eh
+                gcc
+                -Wl,--whole-archive
+                c
+                -Wl,--no-whole-archive
+                -Wl,-Bdynamic
+                -Wl,--end-group
+        )
+
         target_link_options(${PROJECT_NAME}
                 PRIVATE
                 -nodefaultlibs
-                -Wl,--whole-archive -lc -Wl,--no-whole-archive
+                -Wl,--no-undefined
                 -Wl,--gc-sections
                 -Wl,--exclude-libs,ALL
                 -Wl,--strip-all
@@ -87,4 +102,5 @@ endif()
 
 target_link_libraries(${PROJECT_NAME}
         dexkit_static
+        ${DEXKIT_EXTRA_LINK_LIBRARIES}
 )

@@ -41,6 +41,7 @@ jobs:
             wget
             unzip
             zlib-dev
+            zlib-static
 
       - name: Install Android SDK on Alpine
         if: ${{ matrix.sys.name == 'linux-musl' }}
@@ -98,6 +99,19 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :dexkit:cmakeBuild -PlinuxMuslBuild --console=plain
+
+      - name: Verify musl native library is all-in-one
+        if: ${{ matrix.sys.name == 'linux-musl' }}
+        run: |
+          set -eu
+          lib="$(find dexkit/build/cmake/main -name libdexkit.so -type f | head -n 1)"
+          test -n "$lib"
+          readelf -d "$lib"
+          if readelf -d "$lib" | grep -q '(NEEDED)'; then
+            echo "libdexkit.so must be all-in-one, but it still has dynamic dependencies:"
+            readelf -d "$lib" | grep '(NEEDED)'
+            exit 1
+          fi
 
       - name: Run Gradle CMake build (windows)
         if: ${{ matrix.sys.name == 'windows' }}
