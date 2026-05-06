@@ -891,4 +891,24 @@ class UnitTest {
                     && ins.string == null && ins.literal == null
         }) { "Expected some instructions without operands" }
     }
+
+    @Test
+    fun testGetMethodInstructionsBinopLiteral() {
+        val res = bridge.getMethodData(
+            "Lorg/luckypray/dexkit/demo/RandomUtil;->getLiteralBinop(I)I"
+        )
+        assert(res != null)
+        val literalBinops = res!!.instructions.filter { it.opcode in 0xd0..0xe2 }
+        assert(literalBinops.any { it.opcode in 0xd0..0xd7 && it.literal == 30000L }) {
+            "Expected binop/lit16 literal 30000 in RandomUtil.getLiteralBinop"
+        }
+        assert(literalBinops.any { it.opcode in 0xd8..0xe2 && it.literal == -7L }) {
+            "Expected binop/lit8 literal -7 in RandomUtil.getLiteralBinop"
+        }
+        literalBinops.forEach { ins ->
+            assert(ins.literal != null) {
+                "Expected literal for binop/lit opcode 0x${ins.opcode.toString(16)} at index ${ins.index}"
+            }
+        }
+    }
 }
