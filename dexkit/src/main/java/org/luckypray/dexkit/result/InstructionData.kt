@@ -15,7 +15,7 @@ import org.luckypray.dexkit.InnerOperandType
  * - IGET/IPUT/SGET/SPUT_* → [fieldRef]
  * - NEW_INSTANCE, CHECK_CAST, INSTANCE_OF, CONST_CLASS, NEW_ARRAY → [classRef]
  * - CONST_STRING* → [string]
- * - CONST* (numeric) → [literal]
+ * - CONST* and BINOP/LIT* (numeric) → [literal]
  *
  * For other instructions (NOP, MOVE, GOTO, IF_*, RETURN, etc.)
  * all operand fields are null.
@@ -27,7 +27,7 @@ import org.luckypray.dexkit.InnerOperandType
  * - IGET/IPUT/SGET/SPUT_* → [fieldRef]
  * - NEW_INSTANCE、CHECK_CAST、INSTANCE_OF、CONST_CLASS、NEW_ARRAY → [classRef]
  * - CONST_STRING* → [string]
- * - CONST*（数字常量）→ [literal]
+ * - CONST* 和 BINOP/LIT*（数字常量）→ [literal]
  *
  * 对于其他指令（NOP、MOVE、GOTO、IF_*、RETURN 等），所有操作数字段均为 null。
  */
@@ -44,7 +44,7 @@ data class InstructionData(
     val classRef: ClassData? = null,
     /** For CONST_STRING* instructions. */
     val string: String? = null,
-    /** For CONST* numeric instructions (raw bits; float/double encoded as raw Long). */
+    /** For CONST* and BINOP/LIT* numeric instructions (raw bits; float/double encoded as raw Long). */
     val literal: Long? = null,
 ) {
     internal companion object `-Companion` {

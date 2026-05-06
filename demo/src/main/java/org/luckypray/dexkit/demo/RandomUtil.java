@@ -13,4 +13,9 @@ public abstract class RandomUtil {
         Log.d(TAG, "getRandomDice: " + randValue);
         return randValue;
     }
+
+    public static int getLiteralBinop(int value) {
+        int lit16 = value + 30000;
+        return lit16 ^ -7;
+    }
 }

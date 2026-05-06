@@ -28,5 +28,8 @@
 -keep class org.luckypray.dexkit.demo.** {
     static <fields>;
 }
+-keepclassmembers class org.luckypray.dexkit.demo.RandomUtil {
+    public static int getLiteralBinop(int);
+}
 
 -dontwarn javax.lang.model.element.Modifier

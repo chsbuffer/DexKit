@@ -26,6 +26,8 @@
 
 namespace dexkit {
 
+inline std::optional<EncodeNumber> ReadEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16_t *ptr);
+
 inline void PushEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16_t *ptr, std::vector<EncodeNumber> *using_numbers);
 
 DexItem::DexItem(uint32_t id, std::shared_ptr<MemMap> mmap, uint32_t header_off, DexKit *dexkit) :
@@ -1234,7 +1236,7 @@ std::vector<uint32_t> DexItem::GetInvokeMethodsFromCode(uint32_t method_idx) {
     return std::move(invoke_methods);
 }
 
-void PushEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16_t *ptr, std::vector<EncodeNumber> *using_numbers) {
+std::optional<EncodeNumber> ReadEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16_t *ptr) {
     switch (op_format) {
         // using number
         case dex::k11n: { // const/4
@@ -1242,44 +1244,44 @@ void PushEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16
             if (value & 0x8) {
                 value |= 0xf0;
             }
-            using_numbers->emplace_back(EncodeNumber{.type = BYTE, .value = {.L8 = (int8_t) value}});
-            break;
+            return EncodeNumber{.type = BYTE, .value = {.L8 = (int8_t) value}};
         }
         case dex::k21s: { // const/16, const-wide/16
             uint16_t value = *ptr;
             if (value & 0x8000) {
                 value |= 0xffff0000;
             }
-            using_numbers->emplace_back(EncodeNumber{.type = SHORT, .value = {.L16 = (int16_t) value}});
-            break;
+            return EncodeNumber{.type = SHORT, .value = {.L16 = (int16_t) value}};
         }
         case dex::k21h: { // const/high16, const-wide/high16
             if (op == 0x15) {
-                using_numbers->emplace_back(EncodeNumber{.type = FLOAT, .value = {.L32 = {.int_value = (int32_t) (*ptr << 16)}}});
+                return EncodeNumber{.type = FLOAT, .value = {.L32 = {.int_value = (int32_t) (*ptr << 16)}}};
             } else { // 0x19
-                using_numbers->emplace_back(EncodeNumber{.type = DOUBLE, .value = {.L64 = {.long_value = (int64_t) (((uint64_t) *ptr) << 48)}}});
+                return EncodeNumber{.type = DOUBLE, .value = {.L64 = {.long_value = (int64_t) (((uint64_t) *ptr) << 48)}}};
             }
-            break;
         }
         case dex::k31i: { // const, const-wide/32
             if (op == 0x14) {
-                using_numbers->emplace_back(EncodeNumber{.type = FLOAT, .value = {.L32 = {.int_value = (int32_t) ReadInt(ptr)}}});
+                return EncodeNumber{.type = FLOAT, .value = {.L32 = {.int_value = (int32_t) ReadInt(ptr)}}};
             } else { // 0x17
-                using_numbers->emplace_back(EncodeNumber{.type = INT, .value = {.L32 = {.int_value = (int32_t) ReadInt(ptr)}}});
+                return EncodeNumber{.type = INT, .value = {.L32 = {.int_value = (int32_t) ReadInt(ptr)}}};
             }
-            break;
         }
         case dex::k51l: // const-wide
-            using_numbers->emplace_back(EncodeNumber{.type = LONG, .value = {.L64 = {.long_value = (int64_t) ReadLong(ptr)}}});
-            break;
+            return EncodeNumber{.type = LONG, .value = {.L64 = {.long_value = (int64_t) ReadLong(ptr)}}};
         case dex::k22s: // binop/lit16
-            using_numbers->emplace_back(EncodeNumber{.type = SHORT, .value = {.L16 = (int16_t) *ptr}});
-            break;
+            return EncodeNumber{.type = SHORT, .value = {.L16 = (int16_t) *ptr}};
         case dex::k22b: // binop/lit8
-            using_numbers->emplace_back(EncodeNumber{.type = BYTE, .value = {.L8 = (int8_t) (*ptr >> 8)}});
-            break;
+            return EncodeNumber{.type = BYTE, .value = {.L8 = (int8_t) (*ptr >> 8)}};
         default:
-            break;
+            return std::nullopt;
+    }
+}
+
+void PushEncodeNumber(dex::InstructionFormat op_format, uint8_t op, const uint16_t *ptr, std::vector<EncodeNumber> *using_numbers) {
+    auto number = ReadEncodeNumber(op_format, op, ptr);
+    if (number.has_value()) {
+        using_numbers->emplace_back(*number);
     }
 }
 
@@ -1352,6 +1354,7 @@ std::vector<InstructionBean> DexItem::GetInstructions(uint32_t method_idx) {
         auto op = (uint8_t) *p;
         auto ptr = p;
         auto width = GetBytecodeWidth(ptr++);
+        auto op_format = ins_formats[op];
 
         InstructionBean bean;
         bean.index = ins_index;
@@ -1383,44 +1386,9 @@ std::vector<InstructionBean> DexItem::GetInstructions(uint32_t method_idx) {
             auto index = ReadInt(ptr);
             bean.operand_type = schema::OperandType::String;
             bean.string_value = this->strings[index];
-        } else if (op == 0x12) {
-            // const/4 (k11n)
-            int8_t value = (int8_t)(*(ptr - 1) >> 12);
-            if (value & 0x8) {
-                value |= 0xf0;
-            }
+        } else if (auto number = ReadEncodeNumber(op_format, op, ptr); number.has_value()) {
             bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x13 || op == 0x16) {
-            // const/16, const-wide/16 (k21s)
-            int16_t value = (int16_t)*ptr;
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x14) {
-            // const (k31i)
-            int32_t value = (int32_t)ReadInt(ptr);
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x17) {
-            // const-wide/32 (k31i)
-            int32_t value = (int32_t)ReadInt(ptr);
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x15) {
-            // const/high16 (k21h)
-            int32_t value = (int32_t)(*ptr << 16);
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x19) {
-            // const-wide/high16 (k21h)
-            int64_t value = (int64_t)(((uint64_t)*ptr) << 48);
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
-        } else if (op == 0x18) {
-            // const-wide (k51l)
-            int64_t value = (int64_t)ReadLong(ptr);
-            bean.operand_type = schema::OperandType::Literal;
-            bean.literal_value = value;
+            bean.literal_value = GetLongValue(*number);
         }
         // else: operand_type remains None
 
