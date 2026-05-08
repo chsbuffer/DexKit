@@ -1,5 +1,11 @@
 name: Build DexKit Native Libraries
 
+env:
+  LINUX_CODENAME: xenial
+  LINUX_SYSROOT_PATH: .dexkit-sysroot/ubuntu-16.04-x86_64
+  LINUX_GCC10_HEADERS_PATH: .dexkit-sysroot/gcc10-headers
+  LINUX_SYSROOT_CACHE_KEY_PREFIX: dexkit-linux-amd64-sysroot-v1
+
 on:
   push:
     branches: [ master ]
@@ -12,9 +18,9 @@ jobs:
     strategy:
       matrix:
         sys:
-          - { name: linux-musl,  os: ubuntu-latest,  shell: 'alpine.sh --root {0}'}
-          - { name: windows,     os: windows-latest, shell: bash}
-          - { name: macos,       os: macos-latest,   shell: bash}
+          - { name: linux,   os: ubuntu-latest,  shell: bash}
+          - { name: windows, os: windows-latest, shell: bash}
+          - { name: macos,   os: macos-latest,   shell: bash}
     defaults:
       run:
         shell: ${{ matrix.sys.shell }}
@@ -23,50 +29,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: Setup latest Alpine Linux
-        uses: jirutka/setup-alpine@v1
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        with:
-          arch: x86_64
-          packages: >
-            build-base
-            cmake
-            ninja
-            git
-            musl-dev
-            libstdc++
-            g++
-            openjdk17-jdk
-            wget
-            unzip
-            zlib-dev
-
-      - name: Install Android SDK on Alpine
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
-        run: |
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/tools.zip
-          unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
-          rm /tmp/tools.zip
-
-          mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH
-          
-          yes | sdkmanager --licenses || true
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-              "platform-tools" \
-              "build-tools;33.0.2" \
-              "cmake;3.22.1" \
-              "ndk;26.1.10909125" \
-              "platforms;android-34"
-
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -79,25 +41,122 @@ jobs:
         with:
           version: 3.25.0
 
-      - name: Build musl PIC static libc (musl)
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
+      - name: Install Linux build tools
+        if: ${{ matrix.sys.name == 'linux' }}
         run: |
-          git clone https://git.musl-libc.org/git/musl
-          cd musl
-          CFLAGS="-O2 -fPIC" ./configure --prefix=/opt/musl-pic
-          make
-          make install
+          sudo apt-get update
+          sudo apt-get install -y clang lld ninja-build binutils xz-utils
 
-      - name: Run Gradle CMake build (musl)
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
-          MUSL_PATH: /opt/musl-pic
+      - name: Restore target Linux sysroot cache
+        if: ${{ matrix.sys.name == 'linux' }}
+        id: cache_linux_sysroot
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LINUX_SYSROOT_PATH }}.tar.xz
+          key: ${{ env.LINUX_SYSROOT_CACHE_KEY_PREFIX }}-${{ env.LINUX_CODENAME }}-${{ hashFiles('build-support/linux-sysroot/**') }}
+
+      - name: Restore GCC 10 headers cache
+        if: ${{ matrix.sys.name == 'linux' }}
+        id: cache_linux_gcc10_headers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LINUX_GCC10_HEADERS_PATH }}.tar.xz
+          key: ${{ env.LINUX_SYSROOT_CACHE_KEY_PREFIX }}-gcc10-headers-${{ hashFiles('build-support/linux-sysroot/**') }}
+
+      - name: Build missing Linux sysroot and GCC 10 headers
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          build_sysroot() {
+            local codename="$1"
+            local path="$2"
+
+            if [ -f "$path.tar.xz" ]; then
+              return
+            fi
+
+            rm -rf "$path"
+            sudo env \
+              UBUNTU_CODENAME="$codename" \
+              bash build-support/linux-sysroot/build-linux-sysroot.sh "$path"
+            sudo tar -C "$path" \
+              --exclude=./dev \
+              --exclude=./proc \
+              --exclude=./sys \
+              --exclude=./run \
+              --exclude=./tmp \
+              --exclude=./var/tmp \
+              -cJf "$path.tar.xz" .
+            sudo chown "$(id -u):$(id -g)" "$path.tar.xz"
+            sudo rm -rf "$path"
+            sudo chown -R "$(id -u):$(id -g)" "$(dirname "$path")"
+          }
+
+          build_gcc10_headers() {
+            local path="$1"
+
+            if [ -f "$path.tar.xz" ]; then
+              return
+            fi
+
+            rm -rf "$path"
+            bash build-support/linux-sysroot/fetch-libstdcxx-headers.sh "$path"
+            tar -C "$path" -cJf "$path.tar.xz" .
+            rm -rf "$path"
+          }
+
+          build_sysroot "$LINUX_CODENAME" "$LINUX_SYSROOT_PATH"
+          build_gcc10_headers "$LINUX_GCC10_HEADERS_PATH"
+
+      - name: Unpack Linux sysroot and GCC 10 headers
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          unpack_archive() {
+            local path="$1"
+            rm -rf "$path"
+            mkdir -p "$path"
+            tar -C "$path" -xJf "$path.tar.xz"
+          }
+
+          unpack_archive "$LINUX_SYSROOT_PATH"
+          unpack_archive "$LINUX_GCC10_HEADERS_PATH"
+
+      - name: Prepare Linux compatibility headers
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          compat_dir="$GITHUB_WORKSPACE/.dexkit-sysroot/compat"
+          target_sysroot="$GITHUB_WORKSPACE/$LINUX_SYSROOT_PATH"
+          template_dir="$GITHUB_WORKSPACE/build-support/linux-sysroot"
+          mkdir -p "$compat_dir/gcc5-thread-wrapper"
+          cp "$template_dir/glibc-libstdcxx10-compat.h" "$compat_dir/glibc-libstdcxx10-compat.h"
+
+          sed "s|@TARGET_SYSROOT@|$target_sysroot|g" \
+            "$template_dir/gcc5-thread-wrapper/thread.in" \
+            > "$compat_dir/gcc5-thread-wrapper/thread"
+          sed "s|@TARGET_SYSROOT@|$target_sysroot|g" \
+            "$template_dir/gcc5-thread-wrapper/future.in" \
+            > "$compat_dir/gcc5-thread-wrapper/future"
+
+      - name: Run Gradle CMake build (linux)
+        if: ${{ matrix.sys.name == 'linux' }}
         run: |
           chmod +x gradlew
-          ./gradlew :dexkit:cmakeBuild -PlinuxMuslBuild --console=plain
+
+          sysroot="$GITHUB_WORKSPACE/$LINUX_SYSROOT_PATH"
+          gcc10_headers="$GITHUB_WORKSPACE/$LINUX_GCC10_HEADERS_PATH/usr/include"
+          compat_dir="$GITHUB_WORKSPACE/.dexkit-sysroot/compat"
+          compat_header="$compat_dir/glibc-libstdcxx10-compat.h"
+          cxxflags="-fno-exceptions -nostdinc++ -isystem $compat_dir/gcc5-thread-wrapper -isystem $gcc10_headers/c++/10 -isystem $gcc10_headers/x86_64-linux-gnu/c++/10 -include $compat_header"
+
+          export CC="clang --sysroot=$sysroot --gcc-toolchain=$sysroot/usr"
+          export CXX="clang++ --sysroot=$sysroot --gcc-toolchain=$sysroot/usr"
+          export AR=llvm-ar
+          export RANLIB=llvm-ranlib
+          export LD=ld.lld
+          export CFLAGS=""
+          export CXXFLAGS="$cxxflags"
+          export LDFLAGS="-Wl,--no-as-needed -lpthread"
+
+          ./gradlew :dexkit:cmakeBuild --console=plain
 
       - name: Run Gradle CMake build (windows)
         if: ${{ matrix.sys.name == 'windows' }}

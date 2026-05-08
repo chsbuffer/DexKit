@@ -6,6 +6,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+.dexkit-sysroot/
 
 /docs
 /doc
