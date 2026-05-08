@@ -1,5 +1,9 @@
 name: Build DexKit Native Libraries
 
+env:
+  LINUX_SYSROOT_PATH: .dexkit-sysroot/ubuntu-20.04-x86_64
+  LINUX_SYSROOT_CACHE_KEY: dexkit-ubuntu-20.04-x86_64-gcc10-sysroot-v1
+
 on:
   push:
     branches: [ master ]
@@ -12,9 +16,9 @@ jobs:
     strategy:
       matrix:
         sys:
-          - { name: linux-musl,  os: ubuntu-latest,  shell: 'alpine.sh --root {0}'}
-          - { name: windows,     os: windows-latest, shell: bash}
-          - { name: macos,       os: macos-latest,   shell: bash}
+          - { name: linux,   os: ubuntu-latest,  shell: bash}
+          - { name: windows, os: windows-latest, shell: bash}
+          - { name: macos,   os: macos-latest,   shell: bash}
     defaults:
       run:
         shell: ${{ matrix.sys.shell }}
@@ -23,50 +27,6 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
-      - name: Setup latest Alpine Linux
-        uses: jirutka/setup-alpine@v1
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        with:
-          arch: x86_64
-          packages: >
-            build-base
-            cmake
-            ninja
-            git
-            musl-dev
-            libstdc++
-            g++
-            openjdk17-jdk
-            wget
-            unzip
-            zlib-dev
-
-      - name: Install Android SDK on Alpine
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
-        run: |
-          export ANDROID_SDK_ROOT=$HOME/android-sdk
-
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/tools.zip
-          unzip -q /tmp/tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools
-          rm /tmp/tools.zip
-
-          mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH
-          
-          yes | sdkmanager --licenses || true
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-              "platform-tools" \
-              "build-tools;33.0.2" \
-              "cmake;3.22.1" \
-              "ndk;26.1.10909125" \
-              "platforms;android-34"
-
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -79,25 +39,82 @@ jobs:
         with:
           version: 3.25.0
 
-      - name: Build musl PIC static libc (musl)
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
+      - name: Install Linux build tools
+        if: ${{ matrix.sys.name == 'linux' }}
         run: |
-          git clone https://git.musl-libc.org/git/musl
-          cd musl
-          CFLAGS="-O2 -fPIC" ./configure --prefix=/opt/musl-pic
-          make
-          make install
+          sudo apt-get update
+          sudo apt-get install -y clang lld ninja-build binutils xz-utils
 
-      - name: Run Gradle CMake build (musl)
-        if: ${{ matrix.sys.name == 'linux-musl' }}
-        env:
-          JAVA_HOME: /usr/lib/jvm/java-17-openjdk
-          MUSL_PATH: /opt/musl-pic
+      - name: Restore Linux sysroot cache
+        if: ${{ matrix.sys.name == 'linux' }}
+        id: cache_linux_sysroot
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LINUX_SYSROOT_PATH }}.tar.xz
+          key: ${{ env.LINUX_SYSROOT_CACHE_KEY }}
+
+      - name: Build Linux sysroot
+        if: ${{ matrix.sys.name == 'linux' && steps.cache_linux_sysroot.outputs.cache-hit != 'true' }}
         run: |
+          sudo bash scripts/build-linux-sysroot.sh "$LINUX_SYSROOT_PATH"
+          sudo tar -C "$LINUX_SYSROOT_PATH" \
+            --exclude=./dev \
+            --exclude=./proc \
+            --exclude=./sys \
+            --exclude=./run \
+            --exclude=./tmp \
+            --exclude=./var/tmp \
+            -cJf "$LINUX_SYSROOT_PATH.tar.xz" .
+          sudo chown "$USER:$USER" "$LINUX_SYSROOT_PATH.tar.xz"
+
+      - name: Unpack cached Linux sysroot
+        if: ${{ matrix.sys.name == 'linux' && steps.cache_linux_sysroot.outputs.cache-hit == 'true' }}
+        run: |
+          rm -rf "$LINUX_SYSROOT_PATH"
+          mkdir -p "$LINUX_SYSROOT_PATH"
+          tar -C "$LINUX_SYSROOT_PATH" -xJf "$LINUX_SYSROOT_PATH.tar.xz"
+
+      - name: Run Gradle CMake build (linux)
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          SYSROOT="$GITHUB_WORKSPACE/$LINUX_SYSROOT_PATH"
+          export CC="clang --sysroot=$SYSROOT --gcc-toolchain=$SYSROOT/usr"
+          export CXX="clang++ --sysroot=$SYSROOT --gcc-toolchain=$SYSROOT/usr"
+          export AR=llvm-ar
+          export RANLIB=llvm-ranlib
+          export LD=ld.lld
+
           chmod +x gradlew
-          ./gradlew :dexkit:cmakeBuild -PlinuxMuslBuild --console=plain
+          ./gradlew :dexkit:cmakeBuild --console=plain
+
+      - name: Verify Linux native library
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          lib="$(find dexkit/build/cmake/main -name libdexkit.so -type f | head -n 1)"
+          test -n "$lib"
+          file "$lib"
+          readelf -d "$lib"
+          readelf --version-info "$lib" || true
+          if ! readelf -d "$lib" | grep -q 'libstdc++.so.6'; then
+            echo "libdexkit.so must dynamically depend on GNU libstdc++.so.6"
+            exit 1
+          fi
+
+      - name: Smoke test Linux System.load
+        if: ${{ matrix.sys.name == 'linux' }}
+        run: |
+          tmpdir="$(mktemp -d)"
+          cat > "$tmpdir/LoadNative.java" <<'EOF'
+          public class LoadNative {
+              public static void main(String[] args) {
+                  System.load(args[0]);
+              }
+          }
+          EOF
+          javac "$tmpdir/LoadNative.java"
+          lib="$(find dexkit/build/cmake/main -name libdexkit.so -type f | head -n 1)"
+          lib="$(readlink -f "$lib")"
+          java -cp "$tmpdir" LoadNative "$lib"
 
       - name: Run Gradle CMake build (windows)
         if: ${{ matrix.sys.name == 'windows' }}
