@@ -88,6 +88,7 @@ jobs:
               -cJf "$path.tar.xz" .
             sudo chown "$USER:$USER" "$path.tar.xz"
             sudo rm -rf "$path"
+            sudo chown -R "$USER:$USER" "$(dirname "$path")"
           }
 
           build_sysroot "${{ matrix.sys.codename }}" "${{ matrix.sys.sysroot }}"
