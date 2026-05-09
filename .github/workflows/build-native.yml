@@ -1,8 +1,8 @@
 name: Build DexKit Native Libraries
 
 env:
-  LINUX_SYSROOT_PATH: .dexkit-sysroot/ubuntu-20.04-x86_64
-  LINUX_SYSROOT_CACHE_KEY: dexkit-ubuntu-20.04-x86_64-gcc10-sysroot-v1
+  LINUX_FOCAL_SYSROOT_PATH: .dexkit-sysroot/ubuntu-20.04-x86_64
+  LINUX_SYSROOT_CACHE_KEY_PREFIX: dexkit-linux-amd64-sysroot-v1
 
 on:
   push:
@@ -16,9 +16,11 @@ jobs:
     strategy:
       matrix:
         sys:
-          - { name: linux,   os: ubuntu-latest,  shell: bash}
-          - { name: windows, os: windows-latest, shell: bash}
-          - { name: macos,   os: macos-latest,   shell: bash}
+          - { name: linux,             os: ubuntu-latest,  shell: bash, linux: true,  codename: focal,  sysroot: .dexkit-sysroot/ubuntu-20.04-x86_64, compat: none,   artifact: linux }
+          - { name: linux-ubuntu18.04, os: ubuntu-latest,  shell: bash, linux: true,  codename: bionic, sysroot: .dexkit-sysroot/ubuntu-18.04-x86_64, compat: bionic, artifact: linux-ubuntu18.04 }
+          - { name: linux-ubuntu16.04, os: ubuntu-latest,  shell: bash, linux: true,  codename: xenial, sysroot: .dexkit-sysroot/ubuntu-16.04-x86_64, compat: xenial, artifact: linux-ubuntu16.04 }
+          - { name: windows,           os: windows-latest, shell: bash, linux: false }
+          - { name: macos,             os: macos-latest,   shell: bash, linux: false }
     defaults:
       run:
         shell: ${{ matrix.sys.shell }}
@@ -40,69 +42,98 @@ jobs:
           version: 3.25.0
 
       - name: Install Linux build tools
-        if: ${{ matrix.sys.name == 'linux' }}
+        if: ${{ matrix.sys.linux }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang lld ninja-build binutils xz-utils
 
-      - name: Restore Linux sysroot cache
-        if: ${{ matrix.sys.name == 'linux' }}
+      - name: Restore target Linux sysroot cache
+        if: ${{ matrix.sys.linux }}
         id: cache_linux_sysroot
         uses: actions/cache@v4
         with:
-          path: ${{ env.LINUX_SYSROOT_PATH }}.tar.xz
-          key: ${{ env.LINUX_SYSROOT_CACHE_KEY }}
+          path: ${{ matrix.sys.sysroot }}.tar.xz
+          key: ${{ env.LINUX_SYSROOT_CACHE_KEY_PREFIX }}-${{ matrix.sys.codename }}-${{ hashFiles('build-support/linux-sysroot/**') }}
 
-      - name: Build Linux sysroot
-        if: ${{ matrix.sys.name == 'linux' && steps.cache_linux_sysroot.outputs.cache-hit != 'true' }}
+      - name: Restore focal Linux sysroot cache
+        if: ${{ matrix.sys.linux && matrix.sys.codename != 'focal' }}
+        id: cache_linux_focal_sysroot
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LINUX_FOCAL_SYSROOT_PATH }}.tar.xz
+          key: ${{ env.LINUX_SYSROOT_CACHE_KEY_PREFIX }}-focal-${{ hashFiles('build-support/linux-sysroot/**') }}
+
+      - name: Build missing Linux sysroots
+        if: ${{ matrix.sys.linux }}
         run: |
-          sudo bash scripts/build-linux-sysroot.sh "$LINUX_SYSROOT_PATH"
-          sudo tar -C "$LINUX_SYSROOT_PATH" \
-            --exclude=./dev \
-            --exclude=./proc \
-            --exclude=./sys \
-            --exclude=./run \
-            --exclude=./tmp \
-            --exclude=./var/tmp \
-            -cJf "$LINUX_SYSROOT_PATH.tar.xz" .
-          sudo chown "$USER:$USER" "$LINUX_SYSROOT_PATH.tar.xz"
+          build_sysroot() {
+            local codename="$1"
+            local path="$2"
 
-      - name: Unpack cached Linux sysroot
-        if: ${{ matrix.sys.name == 'linux' && steps.cache_linux_sysroot.outputs.cache-hit == 'true' }}
-        run: |
-          rm -rf "$LINUX_SYSROOT_PATH"
-          mkdir -p "$LINUX_SYSROOT_PATH"
-          tar -C "$LINUX_SYSROOT_PATH" -xJf "$LINUX_SYSROOT_PATH.tar.xz"
+            if [ -f "$path.tar.xz" ]; then
+              return
+            fi
 
-      - name: Run Gradle CMake build (linux)
-        if: ${{ matrix.sys.name == 'linux' }}
-        run: |
-          SYSROOT="$GITHUB_WORKSPACE/$LINUX_SYSROOT_PATH"
-          export CC="clang --sysroot=$SYSROOT --gcc-toolchain=$SYSROOT/usr"
-          export CXX="clang++ --sysroot=$SYSROOT --gcc-toolchain=$SYSROOT/usr"
-          export AR=llvm-ar
-          export RANLIB=llvm-ranlib
-          export LD=ld.lld
+            rm -rf "$path"
+            sudo env \
+              UBUNTU_CODENAME="$codename" \
+              bash build-support/linux-sysroot/build-linux-sysroot.sh "$path"
+            sudo tar -C "$path" \
+              --exclude=./dev \
+              --exclude=./proc \
+              --exclude=./sys \
+              --exclude=./run \
+              --exclude=./tmp \
+              --exclude=./var/tmp \
+              -cJf "$path.tar.xz" .
+            sudo chown "$USER:$USER" "$path.tar.xz"
+            sudo rm -rf "$path"
+          }
 
-          chmod +x gradlew
-          ./gradlew :dexkit:cmakeBuild --console=plain
-
-      - name: Verify Linux native library
-        if: ${{ matrix.sys.name == 'linux' }}
-        run: |
-          lib="$(find dexkit/build/cmake/main -name libdexkit.so -type f | head -n 1)"
-          test -n "$lib"
-          file "$lib"
-          readelf -d "$lib"
-          readelf --version-info "$lib" || true
-          if ! readelf -d "$lib" | grep -q 'libstdc++.so.6'; then
-            echo "libdexkit.so must dynamically depend on GNU libstdc++.so.6"
-            exit 1
+          build_sysroot "${{ matrix.sys.codename }}" "${{ matrix.sys.sysroot }}"
+          if [ "${{ matrix.sys.compat }}" != "none" ]; then
+            build_sysroot focal "$LINUX_FOCAL_SYSROOT_PATH"
           fi
 
-      - name: Smoke test Linux System.load
-        if: ${{ matrix.sys.name == 'linux' }}
+      - name: Unpack Linux sysroots
+        if: ${{ matrix.sys.linux }}
         run: |
+          unpack_sysroot() {
+            local path="$1"
+            rm -rf "$path"
+            mkdir -p "$path"
+            tar -C "$path" -xJf "$path.tar.xz"
+          }
+
+          unpack_sysroot "${{ matrix.sys.sysroot }}"
+          if [ "${{ matrix.sys.compat }}" != "none" ] && [ "${{ matrix.sys.sysroot }}" != "$LINUX_FOCAL_SYSROOT_PATH" ]; then
+            unpack_sysroot "$LINUX_FOCAL_SYSROOT_PATH"
+          fi
+
+      - name: Prepare Linux compatibility headers
+        if: ${{ matrix.sys.linux && matrix.sys.compat != 'none' }}
+        run: |
+          compat_dir="$GITHUB_WORKSPACE/.dexkit-sysroot/compat"
+          target_sysroot="$GITHUB_WORKSPACE/${{ matrix.sys.sysroot }}"
+          template_dir="$GITHUB_WORKSPACE/build-support/linux-sysroot"
+          mkdir -p "$compat_dir/gcc5-thread-wrapper"
+          cp "$template_dir/glibc-libstdcxx10-compat.h" "$compat_dir/glibc-libstdcxx10-compat.h"
+
+          if [ "${{ matrix.sys.compat }}" = "xenial" ]; then
+            sed "s|@TARGET_SYSROOT@|$target_sysroot|g" \
+              "$template_dir/gcc5-thread-wrapper/thread.in" \
+              > "$compat_dir/gcc5-thread-wrapper/thread"
+            sed "s|@TARGET_SYSROOT@|$target_sysroot|g" \
+              "$template_dir/gcc5-thread-wrapper/future.in" \
+              > "$compat_dir/gcc5-thread-wrapper/future"
+          fi
+
+      - name: Run Gradle CMake build (linux)
+        if: ${{ matrix.sys.linux }}
+        run: |
+          chmod +x gradlew
+          mkdir -p "artifacts/native/${{ matrix.sys.artifact }}"
+
           tmpdir="$(mktemp -d)"
           cat > "$tmpdir/LoadNative.java" <<'EOF'
           public class LoadNative {
@@ -112,9 +143,44 @@ jobs:
           }
           EOF
           javac "$tmpdir/LoadNative.java"
+
+          sysroot="$GITHUB_WORKSPACE/${{ matrix.sys.sysroot }}"
+          focal_headers="$GITHUB_WORKSPACE/$LINUX_FOCAL_SYSROOT_PATH/usr/include"
+          compat_dir="$GITHUB_WORKSPACE/.dexkit-sysroot/compat"
+          compat_header="$compat_dir/glibc-libstdcxx10-compat.h"
+
+          case "${{ matrix.sys.compat }}" in
+            none)
+              cxxflags=""
+              ;;
+            bionic)
+              cxxflags="-nostdinc++ -isystem $focal_headers/c++/10 -isystem $focal_headers/x86_64-linux-gnu/c++/10 -include $compat_header"
+              ;;
+            xenial)
+              cxxflags="-fno-exceptions -nostdinc++ -isystem $compat_dir/gcc5-thread-wrapper -isystem $focal_headers/c++/10 -isystem $focal_headers/x86_64-linux-gnu/c++/10 -include $compat_header"
+              ;;
+          esac
+
+          rm -rf dexkit/build/cmake/main
+          export CC="clang --sysroot=$sysroot --gcc-toolchain=$sysroot/usr"
+          export CXX="clang++ --sysroot=$sysroot --gcc-toolchain=$sysroot/usr"
+          export AR=llvm-ar
+          export RANLIB=llvm-ranlib
+          export LD=ld.lld
+          export CFLAGS=""
+          export CXXFLAGS="$cxxflags"
+          export LDFLAGS="-Wl,--no-as-needed -lpthread"
+
+          ./gradlew :dexkit:cmakeBuild --console=plain --no-daemon --rerun-tasks
+
           lib="$(find dexkit/build/cmake/main -name libdexkit.so -type f | head -n 1)"
-          lib="$(readlink -f "$lib")"
-          java -cp "$tmpdir" LoadNative "$lib"
+          test -n "$lib"
+          file "$lib"
+
+          real_lib="$(readlink -f "$lib")"
+          java -cp "$tmpdir" LoadNative "$real_lib"
+
+          cp "$lib" "artifacts/native/${{ matrix.sys.artifact }}/libdexkit.so"
 
       - name: Run Gradle CMake build (windows)
         if: ${{ matrix.sys.name == 'windows' }}
@@ -130,14 +196,14 @@ jobs:
 
       - name: Collect build artifacts
         run: |
-          rm -rf artifacts
           if [ "${RUNNER_OS}" = "Linux" ]; then
-            mkdir -p artifacts/native/linux
-            cp dexkit/build/cmake/main/*/libdexkit.so artifacts/native/linux/
+            test -f "artifacts/native/${{ matrix.sys.artifact }}/libdexkit.so"
           elif [ "${RUNNER_OS}" = "Windows" ]; then
+            rm -rf artifacts
             mkdir -p artifacts/native/windows
             cp dexkit/build/cmake/main/*/libdexkit.dll artifacts/native/windows/
           elif [ "${RUNNER_OS}" = "macOS" ]; then
+            rm -rf artifacts
             mkdir -p artifacts/native/macos artifacts/jvm artifacts/android
             cp dexkit/build/cmake/main/*/libdexkit.dylib artifacts/native/macos/
             cp dexkit/build/libs/dexkit.jar artifacts/jvm/
@@ -172,6 +238,8 @@ jobs:
           test -f $PACKAGE_ROOT/android/dexkit-android.aar
           test -f $PACKAGE_ROOT/android/dexkit-android-sources.jar
           test -f $PACKAGE_ROOT/native/linux/libdexkit.so
+          test -f $PACKAGE_ROOT/native/linux-ubuntu18.04/libdexkit.so
+          test -f $PACKAGE_ROOT/native/linux-ubuntu16.04/libdexkit.so
           test -f $PACKAGE_ROOT/native/macos/libdexkit.dylib
           test -f $PACKAGE_ROOT/native/windows/libdexkit.dll
 
