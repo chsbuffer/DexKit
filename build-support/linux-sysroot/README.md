@@ -113,9 +113,9 @@ pthread is still provided by a separate `libpthread.so.0` there. `--no-as-needed
 keeps `libpthread.so.0` in the dynamic dependencies even if the linker only sees
 pthread usage indirectly through libstdc++.
 
-`fetch-libstdcxx-headers.sh` intentionally relies on `apt-get --print-uris` and
-uses the apt repositories configured on Ubuntu. If those repositories do not
-provide `libstdc++-10-dev`, the script fails.
+`fetch-libstdcxx-headers.sh` downloads `libstdc++-10-dev` by parsing Ubuntu
+`Packages.xz` indexes. It defaults to the focal repositories because GCC 10 is
+the distro compiler there.
 
 ## Ubuntu 16.04 target
 

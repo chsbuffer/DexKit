@@ -8,6 +8,10 @@ if [ "$#" -ne 1 ]; then
 fi
 
 output_path="$1"
+ubuntu_mirror="${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu/}"
+ubuntu_codename="${UBUNTU_CODENAME:-focal}"
+ubuntu_arch="${UBUNTU_ARCH:-amd64}"
+ubuntu_components="${UBUNTU_COMPONENTS:-main universe}"
 package_name="${UBUNTU_LIBSTDCXX_DEV_PACKAGE:-libstdc++-10-dev}"
 
 if [ -e "$output_path" ]; then
@@ -15,8 +19,8 @@ if [ -e "$output_path" ]; then
     exit 1
 fi
 
-if ! command -v apt-get >/dev/null 2>&1; then
-    echo "error: apt-get is required to locate $package_name" >&2
+if ! command -v xz >/dev/null 2>&1; then
+    echo "error: xz is required to read Ubuntu package indexes" >&2
     exit 1
 fi
 
@@ -37,33 +41,54 @@ download() {
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-package_uri=""
-while read -r uri filename _; do
-    case "$uri" in
-        \'http*|\'file:*)
-            uri="${uri#\'}"
-            uri="${uri%\'}"
-            ;;
-        *)
-            continue
-            ;;
-    esac
+find_package_filename() {
+    local suite="$1"
+    local component="$2"
+    local packages_xz="$3"
+    local url="${ubuntu_mirror%/}/dists/$suite/$component/binary-$ubuntu_arch/Packages.xz"
 
-    case "$filename" in
-        "$package_name"_*.deb)
-            package_uri="$uri"
-            break
-            ;;
-    esac
-done < <(apt-get --print-uris --yes --reinstall install "$package_name")
+    if ! download "$url" "$packages_xz" 2>/dev/null; then
+        return 1
+    fi
 
-if [ -z "$package_uri" ]; then
-    echo "error: apt-get could not find a downloadable $package_name package" >&2
+    xz -dc "$packages_xz" | awk -v package_name="$package_name" '
+        BEGIN { RS = ""; FS = "\n" }
+        {
+            package = "";
+            filename = "";
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^Package: /) {
+                    package = substr($i, 10);
+                } else if ($i ~ /^Filename: /) {
+                    filename = substr($i, 11);
+                }
+            }
+            if (package == package_name && filename != "") {
+                print filename;
+                exit;
+            }
+        }
+    '
+}
+
+package_filename=""
+for suite in "$ubuntu_codename-updates" "$ubuntu_codename-security" "$ubuntu_codename"; do
+    for component in $ubuntu_components; do
+        candidate="$(find_package_filename "$suite" "$component" "$tmpdir/Packages.xz" || true)"
+        if [ -n "$candidate" ]; then
+            package_filename="$candidate"
+            break 2
+        fi
+    done
+done
+
+if [ -z "$package_filename" ]; then
+    echo "error: cannot find $package_name in $ubuntu_codename repositories" >&2
     exit 1
 fi
 
 mkdir -p "$(dirname "$output_path")"
-download "$package_uri" "$tmpdir/$package_name.deb"
+download "${ubuntu_mirror%/}/$package_filename" "$tmpdir/$package_name.deb"
 mkdir -p "$output_path"
 dpkg-deb -x "$tmpdir/$package_name.deb" "$output_path"
 
