@@ -113,10 +113,61 @@ static bool CheckPoint(void *addr) {
         return false;
     }
     if (write(fd, (void *) addr, 8) < 0) {
+        close(fd);
         return false;
     }
     close(fd);
     return true;
+}
+
+static uint32_t alignUp4(uint32_t value) {
+    return (value + 3u) & ~3u;
+}
+
+static dexkit::MemMap copyCookieDexForParse(const void *image) {
+    const auto *header = reinterpret_cast<const dex::Header *>(image);
+    const uint32_t original_file_size = header->file_size;
+    uint32_t fixed_file_size = alignUp4(original_file_size);
+    uint32_t fixed_data_size = header->data_size;
+
+    // Some protected apps keep a mostly-valid in-memory dex but make the data
+    // section/file size non-4-byte-aligned. ART can already have consumed it,
+    // while slicer rejects it during re-parse.
+    if (header->data_off <= fixed_file_size) {
+        const uint32_t rounded_data_size = alignUp4(header->data_size);
+        if (header->data_size != rounded_data_size) {
+            const uint64_t rounded_data_end =
+                    static_cast<uint64_t>(header->data_off) + rounded_data_size;
+            if (rounded_data_end > fixed_file_size) {
+                fixed_file_size = alignUp4(static_cast<uint32_t>(rounded_data_end));
+            }
+        }
+        if (fixed_file_size != original_file_size || header->data_size != rounded_data_size) {
+            fixed_data_size = fixed_file_size - header->data_off;
+        }
+    }
+
+    auto mmap = dexkit::MemMap(fixed_file_size);
+    if (!mmap.ok()) {
+        return {};
+    }
+    memcpy((void *) mmap.data(), image, original_file_size);
+    if (fixed_file_size > original_file_size) {
+        memset((void *) (mmap.data() + original_file_size), 0, fixed_file_size - original_file_size);
+    }
+
+    if (fixed_file_size != original_file_size || fixed_data_size != header->data_size) {
+        auto *fixed_header = reinterpret_cast<dex::Header *>(mmap.data());
+        LOGW("normalize cookie dex for DexKit: file_size %u -> %u, data_size %u -> %u, pad=%u",
+             original_file_size,
+             fixed_file_size,
+             header->data_size,
+             fixed_data_size,
+             fixed_file_size - original_file_size);
+        fixed_header->file_size = fixed_file_size;
+        fixed_header->data_size = fixed_data_size;
+    }
+    return mmap;
 }
 
 void init(JNIEnv *env) {
@@ -189,7 +240,8 @@ Java_org_luckypray_dexkit_DexKitBridge_nativeInitDexKitByClassLoader(JNIEnv *env
                     has_compact = true;
                     break;
                 } else {
-                    LOGD("push standard dex file %d, image size: %zu", j, header->file_size);
+                    LOGD("push standard dex file %d, image size: %zu", j,
+                         static_cast<size_t>(header->file_size));
                     dex_images.emplace_back(dex_file->begin_);
                 }
             }
@@ -213,8 +265,11 @@ Java_org_luckypray_dexkit_DexKitBridge_nativeInitDexKitByClassLoader(JNIEnv *env
             std::vector<std::unique_ptr<dexkit::MemMap>> images;
             for (auto image: dex_images) {
                 auto header = reinterpret_cast<const struct dex::Header *>(image);
-                auto mmap = dexkit::MemMap(header->file_size);
-                memcpy((void *) mmap.data(), image, header->file_size);
+                auto mmap = copyCookieDexForParse(image);
+                if (!mmap.ok()) {
+                    LOGW("copy cookie dex failed, skip image size: %u", header->file_size);
+                    continue;
+                }
                 images.emplace_back(std::make_unique<dexkit::MemMap>(std::move(mmap)));
             }
             auto ret = dexkit->AddImage(std::move(images));
@@ -698,8 +753,8 @@ Java_org_luckypray_dexkit_DexKitBridge_nativeGetMethodUsingStrings(JNIEnv *env, 
 
 DEXKIT_JNI jbyteArray
 Java_org_luckypray_dexkit_DexKitBridge_nativeGetMethodUsingFields(JNIEnv *env, jclass clazz,
-                                                                   jlong native_ptr,
-                                                                   jlong encode_method_id) {
+                                                                  jlong native_ptr,
+                                                                  jlong encode_method_id) {
     if (!native_ptr) {
         return {};
     }

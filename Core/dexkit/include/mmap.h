@@ -102,12 +102,12 @@ struct MemMap {
 
     [[nodiscard]] bool ok() const { return base && size; }
 
-    [[nodiscard]] auto data() const { return base; }
+    [[nodiscard]] uint8_t* data() const { return base; }
 
-    [[nodiscard]] auto len() const { return size; }
+    [[nodiscard]] size_t len() const { return size; }
 
 private:
-    const uint8_t *base = nullptr;
+    uint8_t *base = nullptr;
     size_t size = 0;
     int fd = -1;
 };
